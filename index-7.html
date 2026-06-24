@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AR Vision Studio</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --primary: #7c3aed;
+    --primary-light: #a78bfa;
+    --accent: #f59e0b;
+    --accent2: #ec4899;
+    --neon: #00f5ff;
+    --neon2: #39ff14;
+    --dark: #0a0a0f;
+    --dark2: #0f0f1a;
+    --glass: rgba(255,255,255,0.05);
+    --glass-border: rgba(255,255,255,0.12);
+    --text: #f0f0ff;
+    --text-dim: rgba(240,240,255,0.5);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--dark);
+    color: var(--text);
+    font-family: 'Tajawal', sans-serif;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    user-select: none;
+  }
+
+  /* ─── LOADING SCREEN ─── */
+  #loading-screen {
+    position: fixed; inset: 0; z-index: 9999;
+    background: linear-gradient(135deg, #0a0a0f 0%, #1a0a2e 50%, #0a0a0f 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: opacity 0.8s ease, transform 0.8s ease;
+  }
+  #loading-screen.fade-out { opacity: 0; pointer-events: none; transform: scale(1.05); }
+
+  .loader-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(2rem, 6vw, 4rem);
+    font-weight: 900;
+    background: linear-gradient(90deg, var(--neon), var(--primary-light), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+    animation: logoPulse 2s ease-in-out infinite;
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+  }
+  .loader-sub {
+    font-size: 0.9rem; color: var(--text-dim); letter-spacing: 6px;
+    text-transform: uppercase; margin-bottom: 50px;
+  }
+  .loader-ring {
+    width: 90px; height: 90px;
+    border: 3px solid rgba(124,58,237,0.2);
+    border-top-color: var(--primary-light);
+    border-right-color: var(--neon);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 30px;
+    position: relative;
+  }
+  .loader-ring::after {
+    content: ''; position: absolute;
+    inset: 8px; border-radius: 50%;
+    border: 2px solid rgba(0,245,255,0.2);
+    border-bottom-color: var(--accent2);
+    animation: spin 1.5s linear infinite reverse;
+  }
+  .loader-progress-bar {
+    width: 280px; height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px; overflow: hidden;
+  }
+  .loader-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--neon));
+    border-radius: 2px;
+    animation: loadProgress 3s ease-in-out forwards;
+    box-shadow: 0 0 10px var(--primary);
+  }
+  .loader-status {
+    margin-top: 16px; font-size: 0.8rem; color: var(--text-dim);
+    font-family: 'Orbitron', sans-serif; letter-spacing: 2px;
+    animation: textFlicker 0.1s infinite;
+  }
+
+  @keyframes loadProgress { 0%{width:0%} 30%{width:35%} 60%{width:65%} 100%{width:100%} }
+  @keyframes logoPulse { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.3) drop-shadow(0 0 20px #7c3aed)} }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  @keyframes textFlicker { 0%,100%{opacity:1} 50%{opacity:0.7} }
+
+  /* ─── MAIN APP ─── */
+  #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+
+  #video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    background: #000;
+  }
+
+  #canvas-overlay {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* ─── PARTICLE CANVAS ─── */
+  #particle-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 15;
+  }
+
+  /* ─── EFFECTS LAYER ─── */
+  #effects-layer {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 20;
+    overflow: hidden;
+  }
+
+  /* ─── EMOJI RAIN ─── */
+  .floating-emoji {
+    position: absolute;
+    font-size: 2.5rem;
+    animation: emojiFloat 2.5s ease-out forwards;
+    pointer-events: none;
+    z-index: 25;
+    filter: drop-shadow(0 0 8px rgba(255,255,255,0.6));
+  }
+  @keyframes emojiFloat {
+    0%{opacity:1;transform:translateY(0) scale(0.5) rotate(-10deg);}
+    50%{opacity:1;transform:translateY(-120px) scale(1.2) rotate(10deg);}
+    100%{opacity:0;transform:translateY(-250px) scale(0.8) rotate(20deg);}
+  }
+
+  /* ─── FIRE EFFECT ─── */
+  .fire-particle {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-radius: 50% 50% 20% 20%;
+    background: radial-gradient(ellipse, #fff700 0%, #ff6600 40%, #ff0000 70%, transparent 100%);
+    animation: fireRise var(--dur,1.5s) ease-out forwards;
+    pointer-events: none;
+    z-index: 22;
+    filter: blur(1px);
+  }
+  @keyframes fireRise {
+    0%{opacity:1;transform:translateY(0) scale(1) rotate(var(--rot,0deg));}
+    100%{opacity:0;transform:translateY(calc(-1 * var(--dist,150px))) scale(0.2) rotate(calc(var(--rot,0deg) + 180deg));}
+  }
+
+  /* ─── LIGHTNING ─── */
+  #lightning-svg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 23;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  #lightning-svg.active { opacity: 1; }
+
+  /* ─── ENERGY RING ─── */
+  .energy-ring {
+    position: absolute;
+    border: 3px solid var(--neon);
+    border-radius: 50%;
+    box-shadow: 0 0 20px var(--neon), inset 0 0 20px rgba(0,245,255,0.2);
+    animation: energyExpand 1.2s ease-out forwards;
+    pointer-events: none;
+    z-index: 22;
+  }
+  @keyframes energyExpand {
+    0%{opacity:1;transform:scale(0.2);}
+    100%{opacity:0;transform:scale(4);}
+  }
+
+  /* ─── HEART ─── */
+  .floating-heart {
+    position: absolute;
+    font-size: 2rem;
+    animation: heartFloat 2s ease-out forwards;
+    pointer-events: none;
+    z-index: 25;
+    filter: drop-shadow(0 0 10px #ff69b4);
+  }
+  @keyframes heartFloat {
+    0%{opacity:1;transform:translateY(0) scale(0.3);}
+    30%{transform:translateY(-60px) scale(1.3);}
+    100%{opacity:0;transform:translateY(-200px) scale(0.6);}
+  }
+
+  /* ─── BACKGROUND OVERLAY ─── */
+  #bg-overlay {
+    position: absolute; inset: 0;
+    pointer-events: none; z-index: 8;
+    opacity: 0;
+    transition: opacity 0.5s, background 0.5s;
+  }
+
+  /* ─── GESTURE LABEL ─── */
+  #gesture-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 50;
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.2rem, 4vw, 2.2rem);
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 30px var(--neon), 0 0 60px var(--primary);
+    opacity: 0;
+    transition: opacity 0.3s;
+    letter-spacing: 3px;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    text-transform: uppercase;
+    padding: 12px 24px;
+    border: 1px solid rgba(0,245,255,0.3);
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+  }
+  #gesture-label.show { opacity: 1; }
+
+  /* ─── TOP HUD ─── */
+  #top-hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 60;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+  }
+
+  .hud-left { display: flex; flex-direction: column; gap: 6px; }
+  .hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+  .app-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1rem, 3vw, 1.4rem);
+    font-weight: 900;
+    background: linear-gradient(90deg, var(--neon), var(--primary-light));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 3px;
+  }
+
+  .hud-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-family: 'Orbitron', sans-serif;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+  .hud-badge .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--neon2);
+    animation: blinkDot 1s ease-in-out infinite;
+  }
+  @keyframes blinkDot { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  #fps-counter {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.75rem;
+    color: var(--neon2);
+    letter-spacing: 2px;
+  }
+  #gesture-live {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    color: var(--accent);
+    max-width: 200px;
+    text-align: right;
+    letter-spacing: 1px;
+  }
+
+  /* ─── BOTTOM CONTROLS ─── */
+  #bottom-controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 60;
+    padding: 16px 20px 24px;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .btn-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
+
+  .ctrl-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(16px);
+    padding: 10px 14px;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    color: var(--text);
+    font-family: 'Tajawal', sans-serif;
+    font-size: 0.7rem;
+    position: relative;
+    overflow: hidden;
+    min-width: 58px;
+  }
+  .ctrl-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, transparent, rgba(255,255,255,0.05));
+    opacity: 0; transition: opacity 0.25s;
+  }
+  .ctrl-btn:hover::before { opacity: 1; }
+  .ctrl-btn:hover {
+    border-color: var(--primary-light);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(124,58,237,0.3), 0 0 15px rgba(124,58,237,0.2);
+  }
+  .ctrl-btn:active { transform: scale(0.94) translateY(0); }
+  .ctrl-btn .icon { font-size: 1.5rem; line-height: 1; }
+  .ctrl-btn.primary {
+    background: linear-gradient(135deg, var(--primary), #5b21b6);
+    border-color: var(--primary-light);
+    box-shadow: 0 4px 20px rgba(124,58,237,0.4);
+  }
+  .ctrl-btn.capture-btn {
+    width: 68px; height: 68px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #fff 0%, #e0e0e0 100%);
+    border: 3px solid rgba(255,255,255,0.8);
+    box-shadow: 0 0 30px rgba(255,255,255,0.4), 0 0 60px rgba(255,255,255,0.15);
+    padding: 0;
+    position: relative;
+  }
+  .ctrl-btn.capture-btn::after {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.2);
+  }
+  .ctrl-btn.capture-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 0 40px rgba(255,255,255,0.6), 0 0 80px rgba(255,255,255,0.3);
+  }
+  .ctrl-btn.capture-btn .icon { color: #333; font-size: 1.8rem; }
+
+  /* ─── STICKER PANEL ─── */
+  #sticker-panel {
+    position: absolute;
+    left: 50%;
+    bottom: 140px;
+    transform: translateX(-50%) translateY(20px);
+    z-index: 65;
+    background: rgba(10,10,20,0.85);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(20px);
+    border-radius: 20px;
+    padding: 14px 16px;
+    display: flex; gap: 10px; flex-wrap: wrap;
+    justify-content: center;
+    max-width: 340px;
+    opacity: 0; pointer-events: none;
+    transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  #sticker-panel.open {
+    opacity: 1; pointer-events: all;
+    transform: translateX(-50%) translateY(0);
+  }
+  .sticker-item {
+    width: 50px; height: 50px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+  .sticker-item:hover {
+    transform: scale(1.2) rotate(5deg);
+    background: rgba(124,58,237,0.3);
+    border-color: var(--primary-light);
+    box-shadow: 0 5px 20px rgba(124,58,237,0.4);
+  }
+
+  /* ─── NOTIFICATION ─── */
+  .notif {
+    position: fixed;
+    top: 80px; left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    z-index: 200;
+    background: rgba(10,10,20,0.9);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(20px);
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 0.85rem;
+    color: var(--text);
+    opacity: 0;
+    transition: all 0.4s ease;
+    white-space: nowrap;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    font-family: 'Tajawal', sans-serif;
+  }
+  .notif.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ─── FLASH ─── */
+  #flash {
+    position: fixed; inset: 0; z-index: 999;
+    background: #fff;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.05s;
+  }
+  #flash.on { opacity: 1; }
+
+  /* ─── FACE MESH OVERLAY ─── */
+  #face-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 12;
+    opacity: 0.7;
+  }
+
+  /* ─── PERMISSIONS ─── */
+  #permission-screen {
+    position: fixed; inset: 0; z-index: 500;
+    background: linear-gradient(135deg, #0a0a0f, #1a0a2e);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 24px; padding: 40px;
+    text-align: center;
+  }
+  #permission-screen h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.6rem;
+    background: linear-gradient(90deg, var(--neon), var(--primary-light));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #permission-screen p { color: var(--text-dim); line-height: 1.8; font-size: 1rem; }
+  #permission-screen .cam-icon { font-size: 5rem; filter: drop-shadow(0 0 20px var(--primary)); }
+  .allow-btn {
+    background: linear-gradient(135deg, var(--primary), #5b21b6);
+    border: none; border-radius: 16px;
+    color: #fff; font-family: 'Tajawal', sans-serif;
+    font-size: 1.1rem; font-weight: 700;
+    padding: 14px 36px; cursor: pointer;
+    box-shadow: 0 8px 30px rgba(124,58,237,0.5);
+    transition: all 0.25s;
+    letter-spacing: 1px;
+  }
+  .allow-btn:hover { transform: translateY(-3px); box-shadow: 0 14px 40px rgba(124,58,237,0.6); }
+
+  /* ─── GESTURE GUIDE ─── */
+  #gesture-guide {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .gesture-hint {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 5px 10px;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    font-family: 'Tajawal', sans-serif;
+    transition: all 0.3s;
+    white-space: nowrap;
+  }
+  .gesture-hint.active {
+    border-color: var(--neon);
+    color: var(--neon);
+    background: rgba(0,245,255,0.08);
+    box-shadow: 0 0 15px rgba(0,245,255,0.2);
+  }
+  .gesture-hint .gh-icon { font-size: 1rem; }
+
+  /* ─── FACE ALERTS ─── */
+  .face-alert {
+    position: absolute;
+    top: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 55;
+    font-size: 0.8rem;
+    color: var(--accent2);
+    font-family: 'Orbitron', sans-serif;
+    opacity: 0;
+    transition: opacity 0.3s;
+    letter-spacing: 2px;
+    text-shadow: 0 0 15px var(--accent2);
+    pointer-events: none;
+  }
+  .face-alert.show { opacity: 1; }
+
+  /* ─── CAMERA SWITCH ─── */
+  #camera-toggle {
+    position: absolute;
+    top: 16px;
+    right: 50%;
+    transform: translateX(50%);
+    display: none;
+  }
+
+  /* ─── 3D LION ─── */
+  .lion-3d {
+    position: absolute;
+    font-size: 5rem;
+    animation: lion3d 3s ease-out forwards;
+    pointer-events: none;
+    z-index: 30;
+    filter: drop-shadow(0 0 20px gold);
+  }
+  @keyframes lion3d {
+    0%{opacity:0;transform:scale(0) rotate(-20deg);}
+    20%{opacity:1;transform:scale(1.3) rotate(5deg);}
+    80%{opacity:1;transform:scale(1) rotate(0deg) translateY(-20px);}
+    100%{opacity:0;transform:scale(0.8) translateY(-60px);}
+  }
+
+  /* ─── EXPLOSION ─── */
+  .explode-particle {
+    position: absolute;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 26;
+    animation: explodeMove var(--dur,1s) ease-out forwards;
+  }
+  @keyframes explodeMove {
+    0%{opacity:1;transform:translate(0,0) scale(1);}
+    100%{opacity:0;transform:translate(var(--tx,0),var(--ty,0)) scale(0);}
+  }
+
+  /* ─── STICKER ON SCREEN ─── */
+  .ar-sticker {
+    position: absolute;
+    font-size: 3.5rem;
+    animation: stickerPop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    pointer-events: none;
+    z-index: 28;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+    cursor: default;
+  }
+  @keyframes stickerPop {
+    0%{transform:scale(0) rotate(-30deg);opacity:0;}
+    100%{transform:scale(1) rotate(0deg);opacity:1;}
+  }
+
+  /* ─── FILTER OVERLAY ─── */
+  #filter-overlay {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 9;
+    transition: all 0.5s ease;
+  }
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading-screen">
+  <div class="loader-logo">AR VISION</div>
+  <div class="loader-sub">Studio Pro</div>
+  <div class="loader-ring"></div>
+  <div class="loader-progress-bar">
+    <div class="loader-progress-fill"></div>
+  </div>
+  <div class="loader-status" id="loader-status">INITIALIZING MODULES...</div>
+</div>
+
+<!-- PERMISSION -->
+<div id="permission-screen" style="display:none;">
+  <div class="cam-icon">📷</div>
+  <h2>AR Vision Studio</h2>
+  <p>نحتاج إذن الكاميرا لتشغيل تتبع اليد والوجه<br>بالواقع المعزز في الوقت الحقيقي</p>
+  <button class="allow-btn" onclick="startCamera()">🚀 تشغيل الكاميرا</button>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" style="display:none;">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="face-canvas"></canvas>
+  <canvas id="canvas-overlay"></canvas>
+  <canvas id="particle-canvas"></canvas>
+  <div id="effects-layer"></div>
+  <div id="bg-overlay"></div>
+  <div id="filter-overlay"></div>
+  <svg id="lightning-svg"></svg>
+
+  <!-- TOP HUD -->
+  <div id="top-hud">
+    <div class="hud-left">
+      <div class="app-title">AR VISION</div>
+      <div class="hud-badge"><span class="dot"></span><span>LIVE</span></div>
+      <div id="fps-counter">-- FPS</div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-badge" id="hand-status">🖐 يد: لا</div>
+      <div class="hud-badge" id="face-status">😊 وجه: لا</div>
+      <div id="gesture-live">انتظار إيماءة...</div>
+    </div>
+  </div>
+
+  <!-- GESTURE GUIDE -->
+  <div id="gesture-guide">
+    <div class="gesture-hint" id="gh-1"><span class="gh-icon">☝️</span> أسد 3D</div>
+    <div class="gesture-hint" id="gh-2"><span class="gh-icon">✌️</span> نار</div>
+    <div class="gesture-hint" id="gh-3"><span class="gh-icon">✊</span> انفجار</div>
+    <div class="gesture-hint" id="gh-4"><span class="gh-icon">🖐</span> خلفية</div>
+    <div class="gesture-hint" id="gh-5"><span class="gh-icon">🤟</span> قلوب</div>
+    <div class="gesture-hint" id="gh-6"><span class="gh-icon">🤘</span> برق</div>
+    <div class="gesture-hint" id="gh-7"><span class="gh-icon">👏</span> طاقة</div>
+  </div>
+
+  <!-- GESTURE LABEL -->
+  <div id="gesture-label"></div>
+
+  <!-- FACE ALERTS -->
+  <div class="face-alert" id="face-alert"></div>
+
+  <!-- FLASH -->
+  <div id="flash"></div>
+
+  <!-- BOTTOM CONTROLS -->
+  <div id="bottom-controls">
+    <div class="btn-row">
+      <button class="ctrl-btn" id="btn-stickers" onclick="toggleStickers()">
+        <span class="icon">🎭</span><span>ملصقات</span>
+      </button>
+      <button class="ctrl-btn" id="btn-effects" onclick="toggleEffectsPanel()">
+        <span class="icon">✨</span><span>مؤثرات</span>
+      </button>
+      <button class="ctrl-btn capture-btn" onclick="capturePhoto()">
+        <span class="icon">📸</span>
+      </button>
+      <button class="ctrl-btn" onclick="switchCamera()">
+        <span class="icon">🔄</span><span>تبديل</span>
+      </button>
+      <button class="ctrl-btn" onclick="clearAllEffects()">
+        <span class="icon">🗑</span><span>مسح</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- STICKER PANEL -->
+  <div id="sticker-panel">
+    <div class="sticker-item" onclick="placeSticker('🦁')">🦁</div>
+    <div class="sticker-item" onclick="placeSticker('🐯')">🐯</div>
+    <div class="sticker-item" onclick="placeSticker('⚡')">⚡</div>
+    <div class="sticker-item" onclick="placeSticker('🔥')">🔥</div>
+    <div class="sticker-item" onclick="placeSticker('💥')">💥</div>
+    <div class="sticker-item" onclick="placeSticker('❤️')">❤️</div>
+    <div class="sticker-item" onclick="placeSticker('💜')">💜</div>
+    <div class="sticker-item" onclick="placeSticker('⭐')">⭐</div>
+    <div class="sticker-item" onclick="placeSticker('🌟')">🌟</div>
+    <div class="sticker-item" onclick="placeSticker('🎭')">🎭</div>
+    <div class="sticker-item" onclick="placeSticker('👑')">👑</div>
+    <div class="sticker-item" onclick="placeSticker('💎')">💎</div>
+    <div class="sticker-item" onclick="placeSticker('🌈')">🌈</div>
+    <div class="sticker-item" onclick="placeSticker('🦋')">🦋</div>
+    <div class="sticker-item" onclick="placeSticker('🎆')">🎆</div>
+    <div class="sticker-item" onclick="placeSticker('🤩')">🤩</div>
+    <div class="sticker-item" onclick="placeSticker('😎')">😎</div>
+    <div class="sticker-item" onclick="placeSticker('🥳')">🥳</div>
+  </div>
+</div>
+
+<!-- MEDIAPIPE + THREE.JS -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  AR VISION STUDIO — FULL ENGINE
+// ═══════════════════════════════════════════════════════
+
+const $ = id => document.getElementById(id);
+
+// ─── STATE ───
+const state = {
+  hands: null,
+  faceMesh: null,
+  camera: null,
+  currentFacingMode: 'user',
+  stream: null,
+  fps: 0,
+  lastTime: 0,
+  frameCount: 0,
+  currentGesture: '',
+  gestureTimeout: null,
+  gestureHoldFrames: 0,
+  lastGesture: '',
+  bgIndex: 0,
+  filters: ['none','sepia','hue-rotate(90deg)','hue-rotate(180deg)','invert(0.2)','saturate(2)','contrast(1.5)'],
+  filterIndex: 0,
+  faceSmiling: false,
+  faceWinking: false,
+  faceMouthOpen: false,
+  stickerPanelOpen: false,
+  placedStickers: [],
+  particles: [],
+  fireParticles: [],
+  energyParticles: [],
+  lightningActive: false,
+  lightningTimer: null,
+  handPositions: [],
+  facePositions: [],
+  appReady: false,
+  gestureActive: {},
+  clappingDetected: false,
+  faceDetected: false,
+  handsDetected: false,
+};
+
+const bgs = [
+  'none',
+  'radial-gradient(ellipse at center, rgba(124,58,237,0.3) 0%, transparent 70%)',
+  'radial-gradient(ellipse at center, rgba(236,72,153,0.3) 0%, transparent 70%)',
+  'radial-gradient(ellipse at center, rgba(0,245,255,0.25) 0%, transparent 70%)',
+  'radial-gradient(ellipse at center, rgba(245,158,11,0.3) 0%, transparent 70%)',
+  'linear-gradient(135deg, rgba(124,58,237,0.2), rgba(0,245,255,0.2))',
+];
+
+// ─── CANVAS SETUP ───
+const overlayCanvas = $('canvas-overlay');
+const overlayCtx = overlayCanvas.getContext('2d');
+const faceCanvas = $('face-canvas');
+const faceCtx = faceCanvas.getContext('2d');
+const particleCanvas = $('particle-canvas');
+const particleCtx = particleCanvas.getContext('2d');
+
+function resizeCanvases() {
+  const w = window.innerWidth, h = window.innerHeight;
+  [overlayCanvas, faceCanvas, particleCanvas].forEach(c => {
+    c.width = w; c.height = h;
+  });
+}
+resizeCanvases();
+window.addEventListener('resize', resizeCanvases);
+
+// ─── FPS COUNTER ───
+function updateFPS(t) {
+  state.frameCount++;
+  if (t - state.lastTime >= 1000) {
+    state.fps = state.frameCount;
+    state.frameCount = 0;
+    state.lastTime = t;
+    $('fps-counter').textContent = state.fps + ' FPS';
+    $('fps-counter').style.color = state.fps > 45 ? '#39ff14' : state.fps > 25 ? '#f59e0b' : '#ef4444';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  GESTURE RECOGNITION ENGINE
+// ═══════════════════════════════════════════════════════
+
+function isFingerUp(lm, fingerTip, fingerMid) {
+  return lm[fingerTip].y < lm[fingerMid].y;
+}
+function isFingerDown(lm, fingerTip, fingerMid) {
+  return lm[fingerTip].y > lm[fingerMid].y;
+}
+
+function detectGesture(landmarks) {
+  const lm = landmarks;
+  const thumb = lm[4].x < lm[3].x; // simplified: thumb might be extended
+  const index = isFingerUp(lm, 8, 6);
+  const middle = isFingerUp(lm, 12, 10);
+  const ring = isFingerUp(lm, 16, 14);
+  const pinky = isFingerUp(lm, 20, 18);
+
+  const thumbUp = lm[4].y < lm[3].y - 0.02;
+  const allDown = !index && !middle && !ring && !pinky;
+  const allUp = index && middle && ring && pinky;
+
+  // ONE FINGER (index only)
+  if (index && !middle && !ring && !pinky) return 'one_finger';
+
+  // PEACE ✌️
+  if (index && middle && !ring && !pinky) return 'peace';
+
+  // ROCK 🤘
+  if (index && !middle && !ring && pinky) return 'rock';
+
+  // HEART HAND 🤟 (index + pinky + thumb)
+  if (index && !middle && !ring && pinky && thumbUp) return 'heart_hand';
+
+  // OPEN HAND 🖐
+  if (allUp) return 'open_hand';
+
+  // FIST ✊
+  if (allDown && !thumbUp) return 'fist';
+
+  return 'unknown';
+}
+
+function detectClap(hands) {
+  if (hands.length < 2) return false;
+  const h1 = hands[0].landmarks;
+  const h2 = hands[1].landmarks;
+  const cx1 = h1.reduce((s, p) => s + p.x, 0) / h1.length;
+  const cy1 = h1.reduce((s, p) => s + p.y, 0) / h1.length;
+  const cx2 = h2.reduce((s, p) => s + p.x, 0) / h2.length;
+  const cy2 = h2.reduce((s, p) => s + p.y, 0) / h2.length;
+  const dist = Math.hypot(cx1 - cx2, cy1 - cy2);
+  return dist < 0.18;
+}
+
+// ═══════════════════════════════════════════════════════
+//  EFFECTS ENGINE
+// ═══════════════════════════════════════════════════════
+
+function showGestureLabel(text) {
+  const el = $('gesture-label');
+  el.textContent = text;
+  el.classList.add('show');
+  $('gesture-live').textContent = text;
+  clearTimeout(state.gestureLabelTimeout);
+  state.gestureLabelTimeout = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+function setGestureHint(id) {
+  document.querySelectorAll('.gesture-hint').forEach(el => el.classList.remove('active'));
+  if (id) $(id)?.classList.add('active');
+}
+
+// FIRE EFFECT
+function spawnFireParticles(x, y) {
+  const el = $('effects-layer');
+  for (let i = 0; i < 5; i++) {
+    const p = document.createElement('div');
+    p.className = 'fire-particle';
+    const angle = (Math.random() - 0.5) * 80;
+    const dist = 80 + Math.random() * 120;
+    const dur = 0.8 + Math.random() * 0.8;
+    const size = 8 + Math.random() * 16;
+    p.style.cssText = `left:${x - size/2}px;top:${y}px;width:${size}px;height:${size}px;--rot:${angle}deg;--dist:${dist}px;--dur:${dur}s;`;
+    el.appendChild(p);
+    setTimeout(() => p.remove(), dur * 1000);
+  }
+}
+
+function spawnFireRing(cx, cy) {
+  const el = $('effects-layer');
+  for (let i = 0; i < 20; i++) {
+    const angle = (i / 20) * Math.PI * 2;
+    const r = 80 + Math.random() * 30;
+    const px = cx + Math.cos(angle) * r;
+    const py = cy + Math.sin(angle) * r;
+    spawnFireParticles(px, py);
+  }
+}
+
+// LIGHTNING
+function triggerLightning() {
+  const svg = $('lightning-svg');
+  svg.innerHTML = '';
+  svg.classList.add('active');
+  const W = window.innerWidth, H = window.innerHeight;
+  const count = 4 + Math.floor(Math.random() * 4);
+  for (let b = 0; b < count; b++) {
+    const startX = Math.random() * W;
+    const pts = [[startX, 0]];
+    let cx = startX, cy = 0;
+    const segs = 10 + Math.floor(Math.random() * 8);
+    for (let i = 1; i <= segs; i++) {
+      cx += (Math.random() - 0.5) * 80;
+      cy = (H / segs) * i;
+      pts.push([cx, cy]);
+    }
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', '#fff');
+    path.setAttribute('stroke-width', 2 + Math.random() * 3);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('opacity', 0.8 + Math.random() * 0.2);
+    path.setAttribute('stroke-linecap', 'round');
+    // glow
+    const glow = path.cloneNode();
+    glow.setAttribute('stroke', '#a0f0ff');
+    glow.setAttribute('stroke-width', 6 + Math.random() * 4);
+    glow.setAttribute('opacity', 0.3);
+    glow.setAttribute('filter', 'url(#glow)');
+    svg.appendChild(glow);
+    svg.appendChild(path);
+  }
+  // add glow filter
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML = `<filter id="glow"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+  svg.prepend(defs);
+  // screen flash
+  document.body.style.background = '#aef';
+  setTimeout(() => { document.body.style.background = ''; }, 80);
+  clearTimeout(state.lightningTimer);
+  state.lightningTimer = setTimeout(() => {
+    svg.classList.remove('active');
+    svg.innerHTML = '';
+  }, 300);
+}
+
+// EXPLOSION
+function triggerExplosion(cx, cy) {
+  const el = $('effects-layer');
+  const colors = ['#ff6600','#ffcc00','#ff0000','#ff99ff','#00ccff','#ffffff','#ff69b4'];
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement('div');
+    p.className = 'explode-particle';
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 60 + Math.random() * 180;
+    const tx = Math.cos(angle) * dist;
+    const ty = Math.sin(angle) * dist;
+    const dur = 0.6 + Math.random() * 0.8;
+    const size = 4 + Math.random() * 12;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    p.style.cssText = `left:${cx}px;top:${cy}px;width:${size}px;height:${size}px;background:${color};--tx:${tx}px;--ty:${ty}px;--dur:${dur}s;box-shadow:0 0 ${size}px ${color};`;
+    el.appendChild(p);
+    setTimeout(() => p.remove(), dur * 1000);
+  }
+  // central flash
+  const flash = document.createElement('div');
+  flash.style.cssText = `position:absolute;left:${cx-50}px;top:${cy-50}px;width:100px;height:100px;border-radius:50%;background:radial-gradient(#fff,#ffcc00,transparent);animation:energyExpand 0.5s forwards;pointer-events:none;z-index:27;`;
+  el.appendChild(flash);
+  setTimeout(() => flash.remove(), 500);
+}
+
+// ENERGY / CLAP
+function triggerEnergyBurst(cx, cy) {
+  const el = $('effects-layer');
+  for (let i = 0; i < 4; i++) {
+    const ring = document.createElement('div');
+    ring.className = 'energy-ring';
+    const size = 40 + i * 20;
+    ring.style.cssText = `left:${cx - size/2}px;top:${cy - size/2}px;width:${size}px;height:${size}px;animation-delay:${i * 0.15}s;border-color:${['#00f5ff','#7c3aed','#39ff14','#f59e0b'][i]};box-shadow:0 0 20px ${['#00f5ff','#7c3aed','#39ff14','#f59e0b'][i]};`;
+    el.appendChild(ring);
+    setTimeout(() => ring.remove(), 1500);
+  }
+}
+
+// HEARTS
+function spawnHearts(cx, cy, count = 12) {
+  const el = $('effects-layer');
+  const hearts = ['❤️','💜','💖','💗','💝','🩷'];
+  for (let i = 0; i < count; i++) {
+    const h = document.createElement('div');
+    h.className = 'floating-heart';
+    h.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+    const ox = (Math.random() - 0.5) * 200;
+    h.style.cssText = `left:${cx + ox}px;top:${cy}px;animation-delay:${Math.random() * 0.5}s;font-size:${1.5 + Math.random() * 1.5}rem;`;
+    el.appendChild(h);
+    setTimeout(() => h.remove(), 2500);
+  }
+}
+
+// EMOJI RAIN
+function spawnEmojis(emojis, cx, cy) {
+  const el = $('effects-layer');
+  const arr = Array.isArray(emojis) ? emojis : [emojis];
+  for (let i = 0; i < 8; i++) {
+    const e = document.createElement('div');
+    e.className = 'floating-emoji';
+    e.textContent = arr[Math.floor(Math.random() * arr.length)];
+    const ox = (Math.random() - 0.5) * 160;
+    e.style.cssText = `left:${cx + ox}px;top:${cy}px;animation-delay:${Math.random() * 0.4}s;font-size:${2 + Math.random() * 1.5}rem;`;
+    el.appendChild(e);
+    setTimeout(() => e.remove(), 3000);
+  }
+}
+
+// LION 3D
+function spawnLion3D(cx, cy) {
+  const el = $('effects-layer');
+  const l = document.createElement('div');
+  l.className = 'lion-3d';
+  l.textContent = ['🦁','🐯','🦊','🦅'][Math.floor(Math.random() * 4)];
+  const ox = (Math.random() - 0.5) * 100;
+  l.style.cssText = `left:${cx + ox - 40}px;top:${cy - 80}px;`;
+  el.appendChild(l);
+  setTimeout(() => l.remove(), 3000);
+}
+
+// BACKGROUND CHANGE
+function changeBackground() {
+  state.bgIndex = (state.bgIndex + 1) % bgs.length;
+  const bg = $('bg-overlay');
+  if (bgs[state.bgIndex] === 'none') {
+    bg.style.opacity = 0;
+  } else {
+    bg.style.background = bgs[state.bgIndex];
+    bg.style.opacity = 0.6;
+  }
+}
+
+// FILTER
+function applyRandomFilter() {
+  state.filterIndex = (state.filterIndex + 1) % state.filters.length;
+  $('filter-overlay').style.cssText = `filter:${state.filters[state.filterIndex]};opacity:${state.filters[state.filterIndex] === 'none' ? 0 : 0.4};`;
+  $('video').style.filter = state.filters[state.filterIndex];
+  showGestureLabel('فلتر: ' + state.filterIndex);
+}
+
+// ═══════════════════════════════════════════════════════
+//  PARTICLE SYSTEM
+// ═══════════════════════════════════════════════════════
+
+class Particle {
+  constructor(x, y, color, type) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 4;
+    this.vy = -2 - Math.random() * 4;
+    this.life = 1;
+    this.decay = 0.01 + Math.random() * 0.02;
+    this.size = 2 + Math.random() * 4;
+    this.color = color;
+    this.type = type || 'spark';
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.05; // gravity
+    this.life -= this.decay;
+    this.size *= 0.99;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, this.life);
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+const particles = [];
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle(x, y, color));
+  }
+}
+
+function updateParticles() {
+  particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw(particleCtx);
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  FACE MESH DRAWING
+// ═══════════════════════════════════════════════════════
+
+function drawFaceMesh(landmarks) {
+  faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+  const W = faceCanvas.width, H = faceCanvas.height;
+
+  // Draw just the silhouette points subtly
+  faceCtx.fillStyle = 'rgba(124,58,237,0.35)';
+  for (let i = 0; i < landmarks.length; i += 3) {
+    const lm = landmarks[i];
+    const x = (1 - lm.x) * W;
+    const y = lm.y * H;
+    faceCtx.beginPath();
+    faceCtx.arc(x, y, 1.2, 0, Math.PI * 2);
+    faceCtx.fill();
+  }
+
+  // Eyes
+  const leftEye = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246].map(i => landmarks[i]);
+  const rightEye = [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398].map(i => landmarks[i]);
+  drawFaceContour(faceCtx, leftEye, W, H, '#00f5ff', 1.5);
+  drawFaceContour(faceCtx, rightEye, W, H, '#00f5ff', 1.5);
+
+  // Lips
+  const lipsOuter = [61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185].map(i => landmarks[i]);
+  drawFaceContour(faceCtx, lipsOuter, W, H, '#ec4899', 1.5);
+}
+
+function drawFaceContour(ctx, pts, W, H, color, lw) {
+  if (!pts || pts.length < 2) return;
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 6;
+  pts.forEach((p, i) => {
+    const x = (1 - p.x) * W, y = p.y * H;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.stroke();
+}
+
+// Face analysis
+function analyzeFace(landmarks) {
+  const W = faceCanvas.width, H = faceCanvas.height;
+
+  // SMILE: distance between mouth corners vs face width
+  const leftMouth = landmarks[61];
+  const rightMouth = landmarks[291];
+  const mouthWidth = Math.abs(leftMouth.x - rightMouth.x);
+  const faceLeftEdge = landmarks[234];
+  const faceRightEdge = landmarks[454];
+  const faceWidth = Math.abs(faceLeftEdge.x - faceRightEdge.x);
+  const smileRatio = mouthWidth / faceWidth;
+  const isSmiling = smileRatio > 0.38;
+
+  // MOUTH OPEN: top lip vs bottom lip
+  const topLip = landmarks[13];
+  const bottomLip = landmarks[14];
+  const mouthOpenDist = Math.abs(topLip.y - bottomLip.y);
+  const faceHeight = Math.abs(landmarks[10].y - landmarks[152].y);
+  const mouthOpenRatio = mouthOpenDist / faceHeight;
+  const isMouthOpen = mouthOpenRatio > 0.04;
+
+  // WINK: eye openness
+  const leftTopEye = landmarks[159];
+  const leftBottomEye = landmarks[145];
+  const rightTopEye = landmarks[386];
+  const rightBottomEye = landmarks[374];
+  const leftEyeOpen = Math.abs(leftTopEye.y - leftBottomEye.y);
+  const rightEyeOpen = Math.abs(rightTopEye.y - rightBottomEye.y);
+  const eyeRatio = Math.min(leftEyeOpen, rightEyeOpen) / Math.max(leftEyeOpen, rightEyeOpen);
+  const isWinking = eyeRatio < 0.3 && Math.max(leftEyeOpen, rightEyeOpen) > 0.01;
+
+  // Transitions
+  if (isSmiling && !state.faceSmiling) {
+    state.faceSmiling = true;
+    showFaceAlert('😄 ابتسامة!');
+    const faceX = (1 - landmarks[1].x) * W;
+    const faceY = landmarks[1].y * H;
+    spawnEmojis(['😊','😄','🤩','✨','⭐'], faceX, faceY - 80);
+    addParticles(faceX, faceY, '#ffcc00', 20);
+  } else if (!isSmiling) { state.faceSmiling = false; }
+
+  if (isWinking && !state.faceWinking) {
+    state.faceWinking = true;
+    showFaceAlert('😉 غمزة!');
+    applyRandomFilter();
+  } else if (!isWinking) { state.faceWinking = false; }
+
+  if (isMouthOpen && !state.faceMouthOpen) {
+    state.faceMouthOpen = true;
+    showFaceAlert('😲 واو!');
+    const faceX = (1 - landmarks[1].x) * W;
+    const faceY = landmarks[1].y * H;
+    spawnEmojis(['😱','😮','🤯','💫'], faceX, faceY);
+  } else if (!isMouthOpen) { state.faceMouthOpen = false; }
+}
+
+function showFaceAlert(text) {
+  const el = $('face-alert');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(state.faceAlertTimeout);
+  state.faceAlertTimeout = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  HAND LANDMARKS DRAWING
+// ═══════════════════════════════════════════════════════
+
+function drawHandLandmarks(landmarks, gesture) {
+  const W = overlayCanvas.width, H = overlayCanvas.height;
+  const pts = landmarks.map(lm => ({ x: (1 - lm.x) * W, y: lm.y * H }));
+
+  const connections = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+    [5,9],[9,13],[13,17]
+  ];
+
+  const color = {
+    'one_finger': '#39ff14',
+    'peace': '#ff6600',
+    'fist': '#ff0000',
+    'open_hand': '#00f5ff',
+    'heart_hand': '#ff69b4',
+    'rock': '#a0f0ff',
+  }[gesture] || '#7c3aed';
+
+  overlayCtx.shadowColor = color;
+  overlayCtx.shadowBlur = 15;
+  overlayCtx.strokeStyle = color;
+  overlayCtx.lineWidth = 2;
+
+  connections.forEach(([a, b]) => {
+    overlayCtx.beginPath();
+    overlayCtx.moveTo(pts[a].x, pts[a].y);
+    overlayCtx.lineTo(pts[b].x, pts[b].y);
+    overlayCtx.stroke();
+  });
+
+  pts.forEach((p, i) => {
+    overlayCtx.beginPath();
+    const r = [0,4,8,12,16,20].includes(i) ? 7 : 4;
+    overlayCtx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    overlayCtx.fillStyle = i === 0 ? '#fff' : color;
+    overlayCtx.fill();
+  });
+
+  overlayCtx.shadowBlur = 0;
+}
+
+// ═══════════════════════════════════════════════════════
+//  GESTURE → EFFECT MAPPING
+// ═══════════════════════════════════════════════════════
+
+let gestureFrames = {};
+const GESTURE_THRESHOLD = 8;
+
+function processGesture(gesture, landmarks) {
+  gestureFrames[gesture] = (gestureFrames[gesture] || 0) + 1;
+  Object.keys(gestureFrames).forEach(g => { if (g !== gesture) gestureFrames[g] = 0; });
+
+  if (gestureFrames[gesture] < GESTURE_THRESHOLD) return;
+
+  const W = overlayCanvas.width, H = overlayCanvas.height;
+  const pts = landmarks.map(lm => ({ x: (1 - lm.x) * W, y: lm.y * H }));
+  const cx = pts[9].x, cy = pts[9].y;
+
+  if (gesture === state.lastGesture) {
+    // Continuous effects for fire
+    if (gesture === 'peace') {
+      spawnFireParticles(pts[8].x, pts[8].y);
+      spawnFireParticles(pts[12].x, pts[12].y);
+      addParticles(pts[8].x, pts[8].y, '#ff6600', 3);
+      addParticles(pts[12].x, pts[12].y, '#ff6600', 3);
+    }
+    if (gesture === 'heart_hand') {
+      if (Math.random() < 0.15) spawnHearts(cx, cy, 3);
+    }
+    if (gesture === 'rock') {
+      if (Math.random() < 0.1) triggerLightning();
+    }
+    if (gesture === 'open_hand') {
+      addParticles(cx, cy, '#00f5ff', 5);
+    }
+    return;
+  }
+
+  // NEW GESTURE TRIGGERED
+  state.lastGesture = gesture;
+
+  switch (gesture) {
+    case 'one_finger':
+      showGestureLabel('☝️ أسد ظهر!');
+      setGestureHint('gh-1');
+      spawnLion3D(cx, cy);
+      addParticles(cx, cy, '#ffcc00', 30);
+      break;
+
+    case 'peace':
+      showGestureLabel('✌️ نار!');
+      setGestureHint('gh-2');
+      spawnFireRing(cx, cy);
+      break;
+
+    case 'fist':
+      showGestureLabel('✊ انفجار!');
+      setGestureHint('gh-3');
+      triggerExplosion(cx, cy);
+      addParticles(cx, cy, '#ff6600', 50);
+      break;
+
+    case 'open_hand':
+      showGestureLabel('🖐 تغيير الخلفية!');
+      setGestureHint('gh-4');
+      changeBackground();
+      addParticles(cx, cy, '#00f5ff', 40);
+      break;
+
+    case 'heart_hand':
+      showGestureLabel('🤟 قلوب!');
+      setGestureHint('gh-5');
+      spawnHearts(cx, cy, 15);
+      break;
+
+    case 'rock':
+      showGestureLabel('🤘 برق!');
+      setGestureHint('gh-6');
+      triggerLightning();
+      break;
+  }
+}
+
+function processClapGesture(hands) {
+  if (detectClap(hands)) {
+    if (!state.clappingDetected) {
+      state.clappingDetected = true;
+      const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+      showGestureLabel('👏 طاقة!');
+      setGestureHint('gh-7');
+      triggerEnergyBurst(cx, cy);
+      addParticles(cx, cy, '#7c3aed', 60);
+      spawnEmojis(['⚡','✨','💥','🌟'], cx, cy);
+      setTimeout(() => { state.clappingDetected = false; }, 1500);
+    }
+  } else {
+    state.clappingDetected = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  MEDIAPIPE CALLBACKS
+// ═══════════════════════════════════════════════════════
+
+function onHandResults(results) {
+  const now = performance.now();
+  updateFPS(now);
+
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+  const handsData = [];
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    state.handsDetected = true;
+    $('hand-status').innerHTML = `🖐 يد: ${results.multiHandLandmarks.length}`;
+
+    results.multiHandLandmarks.forEach((landmarks, idx) => {
+      const gesture = detectGesture(landmarks);
+      drawHandLandmarks(landmarks, gesture);
+      handsData.push({ landmarks, gesture });
+
+      if (idx === 0) {
+        processGesture(gesture, landmarks);
+      }
+    });
+
+    if (handsData.length >= 2) {
+      processClapGesture(handsData);
+    }
+  } else {
+    state.handsDetected = false;
+    $('hand-status').innerHTML = `🖐 يد: لا`;
+    gestureFrames = {};
+    state.lastGesture = '';
+    setGestureHint(null);
+  }
+
+  updateParticles();
+}
+
+function onFaceResults(results) {
+  faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+
+  if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    state.faceDetected = true;
+    $('face-status').innerHTML = `😊 وجه: نعم`;
+    const landmarks = results.multiFaceLandmarks[0];
+    drawFaceMesh(landmarks);
+    analyzeFace(landmarks);
+  } else {
+    state.faceDetected = false;
+    $('face-status').innerHTML = `😊 وجه: لا`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  CAMERA SYSTEM
+// ═══════════════════════════════════════════════════════
+
+async function startCamera(facingMode) {
+  $('permission-screen').style.display = 'none';
+  facingMode = facingMode || state.currentFacingMode;
+
+  if (state.stream) {
+    state.stream.getTracks().forEach(t => t.stop());
+  }
+
+  try {
+    const constraints = {
+      video: {
+        facingMode: facingMode,
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 60 }
+      }
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    state.stream = stream;
+    state.currentFacingMode = facingMode;
+    const video = $('video');
+    video.srcObject = stream;
+    video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+    await video.play();
+    $('app').style.display = 'block';
+    initMediaPipe();
+  } catch (err) {
+    console.error('Camera error:', err);
+    showNotif('❌ فشل الكاميرا: ' + err.message);
+    $('permission-screen').style.display = 'flex';
+  }
+}
+
+function switchCamera() {
+  const next = state.currentFacingMode === 'user' ? 'environment' : 'user';
+  startCamera(next);
+}
+
+// ═══════════════════════════════════════════════════════
+//  MEDIAPIPE INIT
+// ═══════════════════════════════════════════════════════
+
+function initMediaPipe() {
+  const video = $('video');
+
+  // HANDS
+  const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+  hands.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.6
+  });
+  hands.onResults(onHandResults);
+  state.hands = hands;
+
+  // FACE MESH
+  const faceMesh = new FaceMesh({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
+  });
+  faceMesh.onResults(onFaceResults);
+  state.faceMesh = faceMesh;
+
+  // CAMERA LOOP
+  let handTurn = true;
+  const cam = new Camera(video, {
+    onFrame: async () => {
+      if (handTurn) {
+        await hands.send({ image: video });
+      } else {
+        await faceMesh.send({ image: video });
+      }
+      handTurn = !handTurn;
+    },
+    width: 1280,
+    height: 720
+  });
+  cam.start();
+  state.camera = cam;
+}
+
+// ═══════════════════════════════════════════════════════
+//  UI ACTIONS
+// ═══════════════════════════════════════════════════════
+
+function toggleStickers() {
+  const panel = $('sticker-panel');
+  state.stickerPanelOpen = !state.stickerPanelOpen;
+  panel.classList.toggle('open', state.stickerPanelOpen);
+}
+
+function toggleEffectsPanel() {
+  // Quick effect cycle demo
+  const effects = ['fire','lightning','explosion','energy','hearts'];
+  const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+  const random = effects[Math.floor(Math.random() * effects.length)];
+  switch (random) {
+    case 'fire': spawnFireRing(cx, cy); break;
+    case 'lightning': triggerLightning(); break;
+    case 'explosion': triggerExplosion(cx, cy); addParticles(cx, cy, '#ff6600', 50); break;
+    case 'energy': triggerEnergyBurst(cx, cy); break;
+    case 'hearts': spawnHearts(cx, cy, 20); break;
+  }
+}
+
+function placeSticker(emoji) {
+  const el = $('effects-layer');
+  const s = document.createElement('div');
+  s.className = 'ar-sticker';
+  s.textContent = emoji;
+  const x = 50 + Math.random() * (window.innerWidth - 150);
+  const y = 100 + Math.random() * (window.innerHeight - 200);
+  s.style.cssText = `left:${x}px;top:${y}px;position:absolute;font-size:3.5rem;`;
+  s.onclick = () => s.remove();
+  el.appendChild(s);
+  state.stickerPanelOpen = false;
+  $('sticker-panel').classList.remove('open');
+}
+
+function clearAllEffects() {
+  $('effects-layer').innerHTML = '';
+  state.bgIndex = 0;
+  $('bg-overlay').style.opacity = 0;
+  $('filter-overlay').style.cssText = '';
+  $('video').style.filter = 'none';
+  particles.length = 0;
+  particleCtx.clearRect(0, 0, particleCanvas.width, particleCanvas.height);
+  $('lightning-svg').classList.remove('active');
+  $('lightning-svg').innerHTML = '';
+  showNotif('🗑 تم مسح كل المؤثرات');
+}
+
+// ─── CAPTURE ───
+async function capturePhoto() {
+  const flash = $('flash');
+  flash.classList.add('on');
+  setTimeout(() => flash.classList.remove('on'), 200);
+
+  const W = window.innerWidth, H = window.innerHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // VIDEO
+  const video = $('video');
+  ctx.save();
+  if (state.currentFacingMode === 'user') {
+    ctx.translate(W, 0); ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0, W, H);
+  ctx.restore();
+
+  // Overlay canvases
+  ctx.drawImage(faceCanvas, 0, 0);
+  ctx.drawImage(overlayCanvas, 0, 0);
+  ctx.drawImage(particleCanvas, 0, 0);
+
+  // Effects layer: render emojis by capturing them as text
+  const stickers = document.querySelectorAll('.ar-sticker, .floating-emoji, .floating-heart, .lion-3d');
+  stickers.forEach(el => {
+    const rect = el.getBoundingClientRect();
+    const size = parseInt(window.getComputedStyle(el).fontSize);
+    ctx.font = `${size}px serif`;
+    ctx.fillText(el.textContent, rect.left, rect.top + size);
+  });
+
+  // Watermark
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = 'bold 18px Orbitron, monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('AR Vision Studio', W - 16, H - 16);
+
+  const url = canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ar-vision-${Date.now()}.png`;
+  a.click();
+  showNotif('📸 تم حفظ الصورة!');
+}
+
+// ─── SHARE ───
+async function sharePhoto() {
+  showNotif('🔗 مشاركة...');
+  if (navigator.share) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage($('video'), 0, 0);
+      canvas.toBlob(async blob => {
+        const file = new File([blob], 'ar-vision.png', { type: 'image/png' });
+        await navigator.share({ files: [file], title: 'AR Vision Studio' });
+      });
+    } catch (e) { showNotif('❌ فشل المشاركة'); }
+  } else {
+    showNotif('❌ المشاركة غير مدعومة');
+  }
+}
+
+// ─── NOTIFICATION ───
+let notifTimeout;
+function showNotif(text) {
+  let n = document.querySelector('.notif');
+  if (!n) {
+    n = document.createElement('div');
+    n.className = 'notif';
+    document.body.appendChild(n);
+  }
+  n.textContent = text;
+  n.classList.add('show');
+  clearTimeout(notifTimeout);
+  notifTimeout = setTimeout(() => n.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT & LOADING FLOW
+// ═══════════════════════════════════════════════════════
+
+const statusMessages = [
+  'LOADING MEDIAPIPE HANDS...',
+  'LOADING FACE MESH...',
+  'INITIALIZING AR ENGINE...',
+  'CALIBRATING GESTURE AI...',
+  'STARTING EFFECTS ENGINE...',
+  'LAUNCHING AR VISION...'
+];
+let msgIdx = 0;
+const statusEl = $('loader-status');
+const msgInterval = setInterval(() => {
+  if (msgIdx < statusMessages.length) {
+    statusEl.textContent = statusMessages[msgIdx++];
+  }
+}, 500);
+
+window.addEventListener('load', async () => {
+  setTimeout(async () => {
+    clearInterval(msgInterval);
+    statusEl.textContent = 'READY!';
+    await new Promise(r => setTimeout(r, 600));
+
+    $('loading-screen').classList.add('fade-out');
+    setTimeout(() => { $('loading-screen').style.display = 'none'; }, 800);
+
+    // Check for camera permission
+    try {
+      const result = await navigator.permissions.query({ name: 'camera' });
+      if (result.state === 'granted') {
+        startCamera('user');
+      } else {
+        $('permission-screen').style.display = 'flex';
+      }
+    } catch (e) {
+      $('permission-screen').style.display = 'flex';
+    }
+  }, 3200);
+});
+
+// Ambient particle loop (background sparkles)
+function ambientSparkles() {
+  if (Math.random() < 0.15) {
+    const x = Math.random() * window.innerWidth;
+    const y = Math.random() * window.innerHeight;
+    addParticles(x, y, ['#7c3aed','#00f5ff','#ec4899','#f59e0b'][Math.floor(Math.random() * 4)], 1);
+  }
+  requestAnimationFrame(ambientSparkles);
+}
+ambientSparkles();
+
+// Handle visibility change for performance
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state.camera) {
+    // Camera keeps running but we reduce load
+  }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (!$('app').style.display || $('app').style.display === 'none') return;
+  switch(e.key) {
+    case ' ': capturePhoto(); break;
+    case 's': toggleStickers(); break;
+    case 'c': switchCamera(); break;
+    case 'x': clearAllEffects(); break;
+    case 'e': toggleEffectsPanel(); break;
+  }
+});
+</script>
+</body>
+</html>
